@@ -119,7 +119,7 @@ def load_data(input_dir, bert_name, batch_size):
         ent2id = {}
         for line in open(os.path.join(input_dir, 'fbwq_full/entities.dict')):
             l = line.strip().split('\t')
-            ent2id[l[0].strip()] = len(ent2id)
+            ent2id[l[0].strip()] = len(ent2id) # one usefull increment trick
         # print(len(ent2id))
         # print(max(ent2id.values()))
         rel2id = {}

@@ -49,7 +49,9 @@ class DataLoader(torch.utils.data.DataLoader):
         self.id2rel = invert_dict(rel2id)
 
 
-
+        # The functionality of both dictionaries and defaultdict are almost same 
+        # except for the fact that defaultdict never raises a KeyError. 
+        # It provides a default value for the key that does not exists.
         sub_map = defaultdict(list)
         so_map = defaultdict(list)
         for line in open(os.path.join(input_dir, 'fbwq_full/train.txt')):

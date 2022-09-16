@@ -9,7 +9,7 @@ import numpy as np
 import time
 from utils.misc import MetricLogger, batch_device, RAdam
 from utils.lr_scheduler import get_linear_schedule_with_warmup
-from .data import load_data
+from .data import load_data,load_data_for_anonyqa
 from .model import TransferNet
 from .predict import validate
 from transformers import AdamW
@@ -23,8 +23,10 @@ torch.set_num_threads(1) # avoid using multiple cpus
 
 def train(args):
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
-
-    ent2id, rel2id, triples, train_loader, val_loader = load_data(args.input_dir, args.bert_name, args.batch_size)
+    if 'AnonyQA' in args.input_dir:
+        ent2id, rel2id, triples, train_loader, val_loader = load_data_for_anonyqa(args.input_dir, args.bert_name, args.kg_name,args.batch_size)
+    else:
+        ent2id, rel2id, triples, train_loader, val_loader = load_data(args.input_dir, args.bert_name, args.batch_size)
     logging.info("Create model.........")
     model = TransferNet(args, ent2id, rel2id, triples)
     if not args.ckpt == None:
@@ -114,6 +116,8 @@ def main():
     # input and output
     parser.add_argument('--input_dir', required=True, help='path to the data')
     parser.add_argument('--save_dir', required=True, help='path to save checkpoints and logs')
+    parser.add_argument('--kg_name', required=False, help='knowledgegraph name')
+
     parser.add_argument('--ckpt', default = None)
     # training parameters
     parser.add_argument('--bert_lr', default=3e-5, type=float)

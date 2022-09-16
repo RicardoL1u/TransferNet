@@ -4,7 +4,8 @@ import pickle
 from collections import defaultdict
 from transformers import AutoTokenizer
 from utils.misc import invert_dict
-
+import json
+from copy import deepcopy
 def collate(batch):
     batch = list(zip(*batch))
     topic_entity, question, answer, entity_range = batch
@@ -38,6 +39,39 @@ class Dataset(torch.utils.data.Dataset):
         one_hot.scatter_(0, indices, 1)
         return one_hot
 
+class AnonyQADataloader(torch.utils.data.DataLoader):
+    def __init__(self,dataset_path,tokenizer,ent2id,rel2id,sub_map,batch_size,training=False):
+        self.tokenizer = tokenizer  
+        self.ent2id = ent2id       
+        data = []
+        
+        for question in json.load(open(dataset_path)):
+            head = [self.ent2id[question['topic_entity']]]
+
+            entity_range = set()
+            for p, o in sub_map[head[0]]:
+                entity_range.add(o)
+                for p2, o2 in sub_map[o]:
+                    entity_range.add(o2)
+            entity_range = [ent2id[o] for o in entity_range]
+            
+            tokenized_q = self.tokenizer(question['text'].strip(),question['question'].strip(), max_length=512, padding='max_length', return_tensors="pt")
+
+            # tokenized_q = self.tokenizer(question['text'].strip() + ' <spt> ' + question['question'].strip(), max_length=512, padding='max_length', return_tensors="pt")
+            ans = [ent2id[a] for a in question['ans_ids']]
+            data.append([head, tokenized_q, ans, entity_range])
+
+        print('data number: {}'.format(len(data)))
+        
+        dataset = Dataset(data, ent2id)
+
+        super().__init__(
+            dataset, 
+            batch_size=batch_size,
+            shuffle=training,
+            collate_fn=collate, 
+            )
+        # super().__init__()
 
 class DataLoader(torch.utils.data.DataLoader):
     def __init__(self, input_dir, fn, bert_name, ent2id, rel2id, batch_size, training=False):
@@ -107,6 +141,61 @@ class DataLoader(torch.utils.data.DataLoader):
             shuffle=training,
             collate_fn=collate, 
             )
+
+
+def load_data_for_anonyqa(datapath,bert_name,kg_name,batch_size):
+    cache_fn = os.path.join(datapath,'processed.pkl')
+    if os.path.exists(cache_fn):
+        print('Read from cache file: {} (NOTE: delete it if you modified data loading process)'.format(cache_fn))
+        with open(cache_fn, 'rb') as fp:
+            ent2id, rel2id, triples, train_dataloader, valid_dataloader = pickle.load(fp)
+        print('Train number: {}, test number: {}'.format(len(train_dataloader.dataset), len(valid_dataloader.dataset)))
+    else:
+        with open(f'data/kg/{kg_name}.pkl','rb') as fin:
+            kg = pickle.load(fin)
+        ent2id = kg.graph.entity2id
+        rel2id = kg.graph.relation2id
+        rels = list(rel2id.keys())
+        for rel in rels:
+            rel2id[rel+'^{-1}'] = len(rel2id)
+
+        id2ent = invert_dict(ent2id)
+        id2rel = invert_dict(rel2id)
+        
+        sub_map = defaultdict(list)
+        so_map = defaultdict(list)
+        triples = []
+        missied_q = set()
+        for line in open(f'data/kg/{kg_name}.ttl'):
+            l = line.strip().split('\t')
+            s = l[0].strip()
+            p = l[1].strip()
+            o = l[2].strip()
+            sub_map[s].append((p, o))
+            so_map[(s, o)].append(p)
+            if s not in ent2id.keys():
+                missied_q.add(s)
+                continue
+            if o not in ent2id.keys():
+                missied_q.add(o)
+                continue
+            triples.append((ent2id[s], rel2id[p], ent2id[o]))
+            # p_rev = rel2id[l[1].strip()+'^{-1}']
+            triples.append((ent2id[o], rel2id[l[1].strip()+'^{-1}'], ent2id[s]))
+        triples = torch.LongTensor(triples)
+        print(missied_q)
+        tokenizer = AutoTokenizer.from_pretrained(bert_name)
+        # special_tokens = ['<spt>']
+        # print(f'add speciall tokens {special_tokens}')
+        # tokenizer.add_tokens(special_tokens,special_tokens=True)
+
+        train_dataloader = AnonyQADataloader(os.path.join(datapath,'train.json'),tokenizer,ent2id,rel2id,sub_map,batch_size,True)
+        valid_dataloader = AnonyQADataloader(os.path.join(datapath,'eval.json'),tokenizer,ent2id,rel2id,sub_map,batch_size,False)
+
+        with open(cache_fn, 'wb') as fp:
+            pickle.dump((ent2id, rel2id, triples, train_dataloader, valid_dataloader), fp)
+
+    return ent2id, rel2id, triples, train_dataloader, valid_dataloader
 
 
 def load_data(input_dir, bert_name, batch_size):

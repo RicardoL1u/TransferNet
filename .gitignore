@@ -1,5 +1,5 @@
 *.cache
 *.sublime-workspace
 *.sublime-project
-
+*.pyc
 data/

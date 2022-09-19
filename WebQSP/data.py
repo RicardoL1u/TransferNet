@@ -58,7 +58,9 @@ class AnonyQADataloader(torch.utils.data.DataLoader):
             tokenized_q = self.tokenizer(question['text'].strip(),question['question'].strip(), max_length=512, padding='max_length', return_tensors="pt")
 
             # tokenized_q = self.tokenizer(question['text'].strip() + ' <spt> ' + question['question'].strip(), max_length=512, padding='max_length', return_tensors="pt")
-            ans = [ent2id[a] for a in question['ans_ids']]
+            ans = [ent2id[a] for a in question['ans_ids'] if a in ent2id.keys()]
+            if len(ans) == 0:
+                continue
             data.append([head, tokenized_q, ans, entity_range])
 
         print('data number: {}'.format(len(data)))

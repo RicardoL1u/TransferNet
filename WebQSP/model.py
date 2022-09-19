@@ -45,6 +45,8 @@ class TransferNet(nn.Module):
         return torch.sparse.mm(self.Mobj.t(), x).t() # [bsz, Esize]
 
     def forward(self, heads, questions, answers=None, entity_range=None):
+        # for k,v in questions.items():
+        #     print(k,v.shape)
         q = self.bert_encoder(**questions)
         q_embeddings, q_word_h = q.pooler_output, q.last_hidden_state # (bsz, dim_h), (bsz, len, dim_h)
 
@@ -97,5 +99,10 @@ class TransferNet(nn.Module):
         else:
             weight = answers * 99 + 1
             loss = torch.sum(entity_range * weight * torch.pow(last_e - answers, 2)) / torch.sum(entity_range * weight)
-
+            # print(entity_range.sum())
+            # print(entity_range.shape)
+            # print(weight)
+            # print(weight.shape)
+            # print(torch.sum(entity_range * weight))
+            # print(loss)
             return {'loss': loss}

@@ -6,6 +6,7 @@ from transformers import AutoTokenizer
 from utils.misc import invert_dict
 import json
 from copy import deepcopy
+from tqdm import tqdm
 def collate(batch):
     batch = list(zip(*batch))
     topic_entity, question, answer, entity_range = batch
@@ -45,18 +46,22 @@ class AnonyQADataloader(torch.utils.data.DataLoader):
         self.ent2id = ent2id       
         data = []
         
-        for question in json.load(open(dataset_path)):
+        for question in tqdm(json.load(open(dataset_path))):
             head = [self.ent2id[question['topic_entity']]]
 
             entity_range = set()
-            for p, o in sub_map[head[0]]:
+            for p, o in sub_map[question['topic_entity']]:
                 entity_range.add(o)
                 for p2, o2 in sub_map[o]:
                     entity_range.add(o2)
             entity_range = [ent2id[o] for o in entity_range]
-            
-            tokenized_q = self.tokenizer(question['text'].strip(),question['question'].strip(), max_length=512, padding='max_length', return_tensors="pt")
+            assert entity_range != [],print(question['topic_entity'],sub_map[question['topic_entity']])
 
+            tokenized_q = self.tokenizer(question['text'].strip(),question['question'].strip(), max_length=512, padding='max_length', return_tensors="pt",truncation='only_first')
+            # if len(tokenized_q['input_ids']) > 512:
+            #     print(question['text'].strip(),question['question'].strip())
+            #     for k,v in tokenized_q.items():
+            #         print(k,v.shape)
             # tokenized_q = self.tokenizer(question['text'].strip() + ' <spt> ' + question['question'].strip(), max_length=512, padding='max_length', return_tensors="pt")
             ans = [ent2id[a] for a in question['ans_ids'] if a in ent2id.keys()]
             if len(ans) == 0:
@@ -146,46 +151,56 @@ class DataLoader(torch.utils.data.DataLoader):
 
 
 def load_data_for_anonyqa(datapath,bert_name,kg_name,batch_size):
-    cache_fn = os.path.join(datapath,'processed.pkl')
+    cache_fn = os.path.join(datapath,f'{kg_name}.pkl')
     if os.path.exists(cache_fn):
         print('Read from cache file: {} (NOTE: delete it if you modified data loading process)'.format(cache_fn))
         with open(cache_fn, 'rb') as fp:
             ent2id, rel2id, triples, train_dataloader, valid_dataloader = pickle.load(fp)
         print('Train number: {}, test number: {}'.format(len(train_dataloader.dataset), len(valid_dataloader.dataset)))
     else:
-        with open(f'data/kg/{kg_name}.pkl','rb') as fin:
-            kg = pickle.load(fin)
-        ent2id = kg.graph.entity2id
-        rel2id = kg.graph.relation2id
-        rels = list(rel2id.keys())
-        for rel in rels:
-            rel2id[rel+'^{-1}'] = len(rel2id)
-
-        id2ent = invert_dict(ent2id)
-        id2rel = invert_dict(rel2id)
-        
+        files = ['train.json','eval.json','test.json']
+        topic_entity_set = set()
+        for file in files:
+            for q in json.load(open(f'{datapath}/{file}')):
+                topic_entity_set.add(q['topic_entity'])
+                
         sub_map = defaultdict(list)
         so_map = defaultdict(list)
         triples = []
-        missied_q = set()
-        for line in open(f'data/kg/{kg_name}.ttl'):
+        entity_set = set()
+        relation_set = set()        
+        for line in set(open(f'data/kg/{kg_name}.ttl').readlines()).union(set(open('data/kg/essentail.ttl').readlines())):
+            l = line.strip().split('\t')
+            s = l[0].strip()
+            p = l[1].strip()
+            o = l[2].strip()
+            entity_set.add(s)
+            entity_set.add(o)
+            relation_set.add(p)
+        
+        ent2id = {}
+        rel2id = {}
+        for entity in entity_set:
+            ent2id[entity] = len(ent2id)
+        for relation in relation_set:
+            rel2id[relation] = len(rel2id)
+            rel2id[relation+'^{-1}'] = len(rel2id)
+        print(f'entity number is {len(ent2id)}')
+        print(f'relation number is {len(rel2id)}')
+        for line in set(open(f'data/kg/{kg_name}.ttl').readlines()).union(set(open('data/kg/essentail.ttl').readlines())):
             l = line.strip().split('\t')
             s = l[0].strip()
             p = l[1].strip()
             o = l[2].strip()
             sub_map[s].append((p, o))
+            if o in topic_entity_set:
+                sub_map[o].append((p+'^{-1}',s))
             so_map[(s, o)].append(p)
-            if s not in ent2id.keys():
-                missied_q.add(s)
-                continue
-            if o not in ent2id.keys():
-                missied_q.add(o)
-                continue
             triples.append((ent2id[s], rel2id[p], ent2id[o]))
             # p_rev = rel2id[l[1].strip()+'^{-1}']
             triples.append((ent2id[o], rel2id[l[1].strip()+'^{-1}'], ent2id[s]))
         triples = torch.LongTensor(triples)
-        print(missied_q)
+        # print(f'the number of missed q is {len(missied_q)}')
         tokenizer = AutoTokenizer.from_pretrained(bert_name)
         # special_tokens = ['<spt>']
         # print(f'add speciall tokens {special_tokens}')

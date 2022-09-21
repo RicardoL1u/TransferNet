@@ -3,3 +3,5 @@
 *.sublime-project
 *.pyc
 data/
+*.zip
+*.log

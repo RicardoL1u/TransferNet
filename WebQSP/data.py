@@ -1,3 +1,4 @@
+from multiprocessing.pool import Pool
 import torch
 import os
 import pickle
@@ -7,6 +8,43 @@ from utils.misc import invert_dict
 import json
 from copy import deepcopy
 from tqdm import tqdm
+
+MAX_SPLIT = 8
+def preprocess_submap_anonyqa(ori_dataset_split:list,sub_map:dict,ent2id:dict,tokenizer:AutoTokenizer):
+    data = []
+    beyond_kg = 0
+    print('Process PID {} begin...'.format(os.getpid()))
+
+    try:
+        for question in tqdm(ori_dataset_split):
+            head = [ent2id[question['topic_entity']]]
+
+            entity_range = set()
+            for p, o in sub_map[question['topic_entity']]:
+                entity_range.add(o)
+                for p2, o2 in sub_map[o]:
+                    entity_range.add(o2)
+            entity_range = [ent2id[o] for o in entity_range]
+            assert entity_range != [],print(question['topic_entity'],sub_map[question['topic_entity']])
+
+            tokenized_q = tokenizer(question['text'].strip(),question['question'].strip(), max_length=512, padding='max_length', return_tensors="pt",truncation='only_first')
+            # if len(tokenized_q['input_ids']) > 512:
+            #     print(question['text'].strip(),question['question'].strip())
+            #     for k,v in tokenized_q.items():
+            #         print(k,v.shape)
+            # tokenized_q = self.tokenizer(question['text'].strip() + ' <spt> ' + question['question'].strip(), max_length=512, padding='max_length', return_tensors="pt")
+            ans = [ent2id[a] for a in question['ans_ids'] if a in ent2id.keys()]
+            not_in_kg = [a for a in question['ans_ids'] if a not in ent2id.keys()]
+            if len(ans) == 0:
+                beyond_kg += 1
+                continue
+            data.append([head, tokenized_q, ans, entity_range,not_in_kg])
+    
+    except Exception as err:
+        print(Exception, err)
+    print('Process PID {} Done...'.format(os.getpid()))
+    return data,beyond_kg
+
 def collate(batch):
     batch = list(zip(*batch))
     topic_entity, question, answer, entity_range,not_in_kg = batch
@@ -69,33 +107,57 @@ class AnonyQADataloader(torch.utils.data.DataLoader):
     def __init__(self,dataset_path,tokenizer,ent2id,rel2id,sub_map,batch_size,training=False):
         self.tokenizer = tokenizer  
         self.ent2id = ent2id       
+        self.rel2id = rel2id
+        self.id2ent = invert_dict(ent2id)
+        self.id2rel = invert_dict(rel2id)
+        self.beyond_kg = 0
+
+        ori_dataset = json.load(open(dataset_path))
+        step = len(ori_dataset) // MAX_SPLIT + 1
+        p = Pool(MAX_SPLIT)
+        result = [[]] * MAX_SPLIT
+        print('Parent process %s.' % os.getpid())
+
         data = []
-        
-        for question in tqdm(json.load(open(dataset_path))):
-            head = [self.ent2id[question['topic_entity']]]
+        for i in range(MAX_SPLIT):
+            start = i * step
+            end = min(start + step, len(ori_dataset))
+            result[i] = p.apply_async(preprocess_submap_anonyqa,args=(ori_dataset[start:end],sub_map,ent2id,tokenizer))
+        print('Waiting for all subprocesses done...')
+        p.close()
+        p.join()
+        print('All subprocesses done.')
+        for i,unit in enumerate(result):
+            temp_data,beyond_kg = unit.get()
+            data.extend(temp_data)
+            self.beyond_kg += beyond_kg
+        # for question in tqdm(json.load(open(dataset_path))):
+        #     head = [self.ent2id[question['topic_entity']]]
 
-            entity_range = set()
-            for p, o in sub_map[question['topic_entity']]:
-                entity_range.add(o)
-                for p2, o2 in sub_map[o]:
-                    entity_range.add(o2)
-            entity_range = [ent2id[o] for o in entity_range]
-            assert entity_range != [],print(question['topic_entity'],sub_map[question['topic_entity']])
+        #     entity_range = set()
+        #     for p, o in sub_map[question['topic_entity']]:
+        #         entity_range.add(o)
+        #         for p2, o2 in sub_map[o]:
+        #             entity_range.add(o2)
+        #     entity_range = [ent2id[o] for o in entity_range]
+        #     assert entity_range != [],print(question['topic_entity'],sub_map[question['topic_entity']])
 
-            tokenized_q = self.tokenizer(question['text'].strip(),question['question'].strip(), max_length=512, padding='max_length', return_tensors="pt",truncation='only_first')
-            # if len(tokenized_q['input_ids']) > 512:
-            #     print(question['text'].strip(),question['question'].strip())
-            #     for k,v in tokenized_q.items():
-            #         print(k,v.shape)
-            # tokenized_q = self.tokenizer(question['text'].strip() + ' <spt> ' + question['question'].strip(), max_length=512, padding='max_length', return_tensors="pt")
-            ans = [ent2id[a] for a in question['ans_ids'] if a in ent2id.keys()]
-            if len(ans) == 0:
-                continue
-            data.append([head, tokenized_q, ans, entity_range])
+        #     tokenized_q = self.tokenizer(question['text'].strip(),question['question'].strip(), max_length=512, padding='max_length', return_tensors="pt",truncation='only_first')
+        #     # if len(tokenized_q['input_ids']) > 512:
+        #     #     print(question['text'].strip(),question['question'].strip())
+        #     #     for k,v in tokenized_q.items():
+        #     #         print(k,v.shape)
+        #     # tokenized_q = self.tokenizer(question['text'].strip() + ' <spt> ' + question['question'].strip(), max_length=512, padding='max_length', return_tensors="pt")
+        #     ans = [ent2id[a] for a in question['ans_ids'] if a in ent2id.keys()]
+        #     not_in_kg = [a for a in question['ans_ids'] if a not in ent2id.keys()]
+        #     if len(ans) == 0:
+        #         self.beyond_kg += 1
+        #         continue
+        #     data.append([head, tokenized_q, ans, entity_range,not_in_kg])
 
         print('data number: {}'.format(len(data)))
         
-        dataset = Dataset(data, ent2id)
+        dataset = AnonyQADataset(data, ent2id)
 
         super().__init__(
             dataset, 

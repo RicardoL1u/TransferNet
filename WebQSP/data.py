@@ -9,7 +9,7 @@ from copy import deepcopy
 from tqdm import tqdm
 def collate(batch):
     batch = list(zip(*batch))
-    topic_entity, question, answer, entity_range = batch
+    topic_entity, question, answer, entity_range,not_in_kg = batch
     topic_entity = torch.stack(topic_entity)
     question = {k:torch.cat([q[k] for q in question], dim=0) for k in question[0]}
     answer = torch.stack(answer)
@@ -28,6 +28,31 @@ class Dataset(torch.utils.data.Dataset):
         answer = self.toOneHot(answer)
         entity_range = self.toOneHot(entity_range)
         return topic_entity, question, answer, entity_range
+
+    def __len__(self):
+        return len(self.questions)
+
+    def toOneHot(self, indices):
+        indices = torch.LongTensor(indices)
+        vec_len = len(self.ent2id)
+        one_hot = torch.FloatTensor(vec_len)
+        one_hot.zero_()
+        one_hot.scatter_(0, indices, 1)
+        return one_hot
+
+
+class AnonyQADataset(torch.utils.data.Dataset):
+    def __init__(self, questions, ent2id):
+        self.questions = questions
+        self.ent2id = ent2id
+        # self.train = train
+
+    def __getitem__(self, index):
+        topic_entity, question, answer, entity_range,not_in_kg = self.questions[index]
+        topic_entity = self.toOneHot(topic_entity)
+        answer = self.toOneHot(answer)
+        entity_range = self.toOneHot(entity_range)
+        return topic_entity, question, answer, entity_range,len(not_in_kg)
 
     def __len__(self):
         return len(self.questions)

@@ -41,7 +41,14 @@ class TransferNet(nn.Module):
 
 
     def follow(self, e, r):
-        x = torch.sparse.mm(self.Msubj, e.t()) * torch.sparse.mm(self.Mrel, r.t())
+        # self.Msubj --> (Tsize, Esize)
+        # e --> bsz, Esize
+        # torch.sparse.mm(self.Msubj, e.t()) --> Tsize, bsz
+        # self.Mrel --> Tsize, num_relations
+        # r --> bsz, num_relations
+        # torch.sparse.mm(self.Mrel, r.t()) --> Tsize, bsz
+        x = torch.sparse.mm(self.Msubj, e.t()) * torch.sparse.mm(self.Mrel, r.t()) # Tsize, bsz
+        # self.Mobj --> Tsize, Esize
         return torch.sparse.mm(self.Mobj.t(), x).t() # [bsz, Esize]
 
     def forward(self, heads, questions, answers=None, entity_range=None):
@@ -57,12 +64,16 @@ class TransferNet(nn.Module):
         ent_probs = []
         for t in range(self.num_steps):
             cq_t = self.step_encoders[t](q_embeddings) # [bsz, dim_h]
-            q_logits = torch.sum(cq_t.unsqueeze(1) * q_word_h, dim=2) # [bsz, max_q]
-            q_dist = torch.softmax(q_logits, 1) # [bsz, max_q]
+            # cq_t.unsqueeze(1) --> bsz, 1, dim_h
+            # q_word_h --> bsz, len, dim_h
+            # before cq_t.unsqueeze(1) * q_word_H
+            # cq_t.unsqueeze(1) would be copy into 'len' numbers along the dim=1 
+            q_logits = torch.sum(cq_t.unsqueeze(1) * q_word_h, dim=2) # [bsz, len]
+            q_dist = torch.softmax(q_logits, 1) # [bsz, len]
             q_dist = q_dist * questions['attention_mask'].float()
-            q_dist = q_dist / (torch.sum(q_dist, dim=1, keepdim=True) + 1e-6) # [bsz, max_q]
+            q_dist = q_dist / (torch.sum(q_dist, dim=1, keepdim=True) + 1e-6) # [bsz, len]
             word_attns.append(q_dist)
-            ctx_h = (q_dist.unsqueeze(1) @ q_word_h).squeeze(1) # [bsz, dim_h]
+            ctx_h = (q_dist.unsqueeze(1) @ q_word_h).squeeze(1) # [bsz, dim_h] -> the final step of eq1
 
             rel_logit = self.rel_classifier(ctx_h) # [bsz, num_relations]
             # rel_dist = torch.softmax(rel_logit, 1) # bad
@@ -77,7 +88,7 @@ class TransferNet(nn.Module):
 
             last_e = self.follow(last_e, rel_dist) # faster than index_add
 
-            # reshape >1 scores to 1 in a differentiable way
+            # reshape >1 scores to 1 in a differentiable way -> eq4
             m = last_e.gt(1).float()
             z = (m * last_e + (1-m)).detach()
             last_e = last_e / z
@@ -86,7 +97,7 @@ class TransferNet(nn.Module):
 
         hop_res = torch.stack(ent_probs, dim=1) # [bsz, num_hop, num_ent]
         hop_attn = torch.softmax(self.hop_selector(q_embeddings), dim=1).unsqueeze(2) # [bsz, num_hop, 1]
-        last_e = torch.sum(hop_res * hop_attn, dim=1) # [bsz, num_ent]
+        last_e = torch.sum(hop_res * hop_attn, dim=1) # [bsz, num_ent] -> eq5
 
         if not self.training:
             return {

@@ -11,7 +11,7 @@ from utils.misc import MetricLogger, batch_device, RAdam
 from utils.lr_scheduler import get_linear_schedule_with_warmup
 from .data import load_data,load_data_for_anonyqa
 from .model import TransferNet
-from .predict import validate
+from .predict import validate,validate_AnonyQA
 from transformers import AdamW
 import logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)-8s %(message)s')
@@ -90,7 +90,7 @@ def train(args):
             optimizer.step()
             scheduler.step()
 
-            if iteration % (len(train_loader) // 10) == 0:
+            if iteration % (len(train_loader) // 5) == 0:
             # if True:
                 
                 logging.info(
@@ -106,8 +106,8 @@ def train(args):
                         lr=optimizer.param_groups[0]["lr"],
                     )
                 )
-        if (epoch+1)%5 == 0:
-            acc = validate(args, model, val_loader, device)
+        if (epoch+1)%1 == 0:
+            acc = validate_AnonyQA(args, model, val_loader, device) if 'AnonyQA' in args.input_dir else validate(args, model, val_loader, device)
             logging.info(acc)
             torch.save(model.state_dict(), os.path.join(args.save_dir, 'model-{}-{:.4f}.pt'.format(epoch, acc)))
 

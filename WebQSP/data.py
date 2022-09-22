@@ -1,4 +1,5 @@
-from multiprocessing.pool import Pool
+from multiprocessing import Pool
+# from pathos.multiprocessing import Pool
 import torch
 import os
 import pickle
@@ -9,14 +10,16 @@ import json
 from copy import deepcopy
 from tqdm import tqdm
 
-MAX_SPLIT = 8
-def preprocess_submap_anonyqa(ori_dataset_split:list,sub_map:dict,ent2id:dict,tokenizer:AutoTokenizer):
+MAX_SPLIT = 60
+def preprocess_submap_anonyqa(ori_dataset_split:list,start:int,end:int,sub_map:dict,ent2id:dict,tokenizer:AutoTokenizer,train=False):
     data = []
     beyond_kg = 0
-    print('Process PID {} begin...'.format(os.getpid()))
-
+    pid = os.getpid()
+    start += 20000
+    end += 20000
+    print('Process from {} to {} PID {} begin...'.format(start, end, pid))
     try:
-        for question in tqdm(ori_dataset_split):
+        for question in tqdm(ori_dataset_split,desc='Processing from {} to {} on PID {}'.format(start, end, pid)):
             head = [ent2id[question['topic_entity']]]
 
             entity_range = set()
@@ -41,8 +44,11 @@ def preprocess_submap_anonyqa(ori_dataset_split:list,sub_map:dict,ent2id:dict,to
             data.append([head, tokenized_q, ans, entity_range,not_in_kg])
     
     except Exception as err:
+        print('What the fuck!')
         print(Exception, err)
-    print('Process PID {} Done...'.format(os.getpid()))
+    print('Process from {} to {} PID {} Done'.format(start, end, pid))
+    with open(f'data/AnonyQA/essentail_{start}_{end}_{train}.pkl','wb') as f:
+        pickle.dump((data,beyond_kg),f) 
     return data,beyond_kg
 
 def collate(batch):
@@ -112,7 +118,7 @@ class AnonyQADataloader(torch.utils.data.DataLoader):
         self.id2rel = invert_dict(rel2id)
         self.beyond_kg = 0
 
-        ori_dataset = json.load(open(dataset_path))
+        ori_dataset = json.load(open(dataset_path))[20000:]
         step = len(ori_dataset) // MAX_SPLIT + 1
         p = Pool(MAX_SPLIT)
         result = [[]] * MAX_SPLIT
@@ -122,7 +128,7 @@ class AnonyQADataloader(torch.utils.data.DataLoader):
         for i in range(MAX_SPLIT):
             start = i * step
             end = min(start + step, len(ori_dataset))
-            result[i] = p.apply_async(preprocess_submap_anonyqa,args=(ori_dataset[start:end],sub_map,ent2id,tokenizer))
+            result[i] = p.apply_async(preprocess_submap_anonyqa,args=(ori_dataset[start:end],start,end,sub_map,ent2id,tokenizer,training))
         print('Waiting for all subprocesses done...')
         p.close()
         p.join()

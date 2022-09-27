@@ -1,5 +1,12 @@
 import json
-datapath = '../data/AnonyQA/'
+import argparse
+parser = argparse.ArgumentParser()
+parser.add_argument('--datapath',type=str,default='../data/AnonyQA/',help='Provide the Path to datasets')
+parser.add_argument('--kg_name',type=str,required=True,help='Provide output kg name')
+args = parser.parse_args()
+datapath = args.datapath
+kg_name = args.kg_name
+
 files = ['train.json','eval.json','test.json']
 topic_entity_set = set()
 for file in files:
@@ -16,5 +23,5 @@ with open('../data/kg/complex_wikidata5m.ttl') as f:
         if s in topic_entity_set or o in topic_entity_set:
             essentail_ttl.append(line)
 
-with open('../data/kg/essentail.ttl','w') as f:
+with open(f'../data/kg/{kg_name}.ttl','w') as f:
     f.writelines(essentail_ttl)

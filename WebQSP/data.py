@@ -164,18 +164,6 @@ class AnonyQADataloader(torch.utils.data.DataLoader):
         #     data.extend(temp_data)
         #     self.beyond_kg += beyond_kg
         
-        #     tokenized_q = self.tokenizer(question['text'].strip(),question['question'].strip(), max_length=512, padding='max_length', return_tensors="pt",truncation='only_first')
-        #     # if len(tokenized_q['input_ids']) > 512:
-        #     #     print(question['text'].strip(),question['question'].strip())
-        #     #     for k,v in tokenized_q.items():
-        #     #         print(k,v.shape)
-        #     # tokenized_q = self.tokenizer(question['text'].strip() + ' <spt> ' + question['question'].strip(), max_length=512, padding='max_length', return_tensors="pt")
-        #     ans = [ent2id[a] for a in question['ans_ids'] if a in ent2id.keys()]
-        #     not_in_kg = [a for a in question['ans_ids'] if a not in ent2id.keys()]
-        #     if len(ans) == 0:
-        #         self.beyond_kg += 1
-        #         continue
-        #     data.append([head, tokenized_q, ans, entity_range,not_in_kg])
 
         print('data number: {}'.format(len(data)))
         

@@ -1,3 +1,4 @@
+import pickle
 import torch
 import torch.nn as nn
 import math
@@ -108,12 +109,23 @@ class TransferNet(nn.Module):
                 'hop_attn': hop_attn.squeeze(2)
             }
         else:
-            weight = answers * 99 + 1
+            weight = answers * 9999 + 1
             loss = torch.sum(entity_range * weight * torch.pow(last_e - answers, 2)) / torch.sum(entity_range * weight)
             # print(entity_range.sum())
             # print(entity_range.shape)
             # print(weight)
             # print(weight.shape)
+            # with open('analysis.pkl','wb') as f:
+            #     pickle.dump((last_e,answers,entity_range),f)
+            # temp = torch.pow(last_e - answers, 2) * entity_range 
+            # print(f'the entity range is {entity_range.sum()}')
+            # print(f'there are {answers.sum()} answers in total')
+            # # print(temp.shape)
+            # print(last_e)
+            # print(last_e > 1e-1)
+            # print(f'there are {(last_e > 1e-1).sum()} preds in total')
+            # print(temp.sum())
+            # print(torch.sum(entity_range * weight * torch.pow(last_e - answers, 2)))
             # print(torch.sum(entity_range * weight))
             # print(loss)
             return {'loss': loss}

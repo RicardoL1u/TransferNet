@@ -10,13 +10,13 @@ import json
 from copy import deepcopy
 from tqdm import tqdm
 
-MAX_SPLIT = 60
+MAX_SPLIT = 2
 def preprocess_submap_anonyqa(ori_dataset_split:list,start:int,end:int,sub_map:dict,ent2id:dict,tokenizer:AutoTokenizer,train=False):
     data = []
     beyond_kg = 0
     pid = os.getpid()
-    start += 20000
-    end += 20000
+    # start += 20000
+    # end += 20000
     print('Process from {} to {} PID {} begin...'.format(start, end, pid))
     try:
         for question in tqdm(ori_dataset_split,desc='Processing from {} to {} on PID {}'.format(start, end, pid)):
@@ -117,37 +117,53 @@ class AnonyQADataloader(torch.utils.data.DataLoader):
         self.id2ent = invert_dict(ent2id)
         self.id2rel = invert_dict(rel2id)
         self.beyond_kg = 0
-
-        ori_dataset = json.load(open(dataset_path))[20000:]
-        step = len(ori_dataset) // MAX_SPLIT + 1
-        p = Pool(MAX_SPLIT)
-        result = [[]] * MAX_SPLIT
-        print('Parent process %s.' % os.getpid())
-
         data = []
-        for i in range(MAX_SPLIT):
-            start = i * step
-            end = min(start + step, len(ori_dataset))
-            result[i] = p.apply_async(preprocess_submap_anonyqa,args=(ori_dataset[start:end],start,end,sub_map,ent2id,tokenizer,training))
-        print('Waiting for all subprocesses done...')
-        p.close()
-        p.join()
-        print('All subprocesses done.')
-        for i,unit in enumerate(result):
-            temp_data,beyond_kg = unit.get()
-            data.extend(temp_data)
-            self.beyond_kg += beyond_kg
-        # for question in tqdm(json.load(open(dataset_path))):
-        #     head = [self.ent2id[question['topic_entity']]]
+        if False:
+            data,self.beyond_kg = pickle.load(open('data/AnonyQA/essentail_0_5001_True.pkl','rb'))
+        else:
+            for question in tqdm(json.load(open(dataset_path))):
+                head = [self.ent2id[question['topic_entity']]]
 
-        #     entity_range = set()
-        #     for p, o in sub_map[question['topic_entity']]:
-        #         entity_range.add(o)
-        #         for p2, o2 in sub_map[o]:
-        #             entity_range.add(o2)
-        #     entity_range = [ent2id[o] for o in entity_range]
-        #     assert entity_range != [],print(question['topic_entity'],sub_map[question['topic_entity']])
+                entity_range = set()
+                for p, o in sub_map[question['topic_entity']]:
+                    entity_range.add(o)
+                    for p2, o2 in sub_map[o]:
+                        entity_range.add(o2)
+                entity_range = [ent2id[o] for o in entity_range]
+                assert entity_range != [],print(question['topic_entity'],sub_map[question['topic_entity']])
 
+                tokenized_q = self.tokenizer(question['text'].strip(),question['question'].strip(), max_length=512, padding='max_length', return_tensors="pt",truncation='only_first')
+                # if len(tokenized_q['input_ids']) > 512:
+                #     print(question['text'].strip(),question['question'].strip())
+                #     for k,v in tokenized_q.items():
+                #         print(k,v.shape)
+                # tokenized_q = self.tokenizer(question['text'].strip() + ' <spt> ' + question['question'].strip(), max_length=512, padding='max_length', return_tensors="pt")
+                ans = [ent2id[a] for a in question['ans_ids'] if a in ent2id.keys()]
+                not_in_kg = [a for a in question['ans_ids'] if a not in ent2id.keys()]
+                if len(ans) == 0:
+                    self.beyond_kg += 1
+                    continue
+                data.append([head, tokenized_q, ans, entity_range,not_in_kg])
+        # ori_dataset = json.load(open(dataset_path))[:10000]
+        # step = len(ori_dataset) // MAX_SPLIT + 1
+        # p = Pool(MAX_SPLIT)
+        # result = [[]] * MAX_SPLIT
+        # print('Parent process %s.' % os.getpid())
+
+        # data = []
+        # for i in range(MAX_SPLIT):
+        #     start = i * step
+        #     end = min(start + step, len(ori_dataset))
+        #     result[i] = p.apply_async(preprocess_submap_anonyqa,args=(ori_dataset[start:end],start,end,sub_map,ent2id,tokenizer,training))
+        # print('Waiting for all subprocesses done...')
+        # p.close()
+        # p.join()
+        # print('All subprocesses done.')
+        # for i,unit in enumerate(result):
+        #     temp_data,beyond_kg = unit.get()
+        #     data.extend(temp_data)
+        #     self.beyond_kg += beyond_kg
+        
         #     tokenized_q = self.tokenizer(question['text'].strip(),question['question'].strip(), max_length=512, padding='max_length', return_tensors="pt",truncation='only_first')
         #     # if len(tokenized_q['input_ids']) > 512:
         #     #     print(question['text'].strip(),question['question'].strip())

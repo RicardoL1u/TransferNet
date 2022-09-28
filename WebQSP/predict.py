@@ -25,6 +25,7 @@ def validate(args, model, data, device, verbose = False):
             count += len(match_score)
             correct += sum(match_score)
             for i in range(len(match_score)):
+                # 对于每一个答案，用argmax找出他是在哪一hop找出的答案
                 h = outputs['hop_attn'][i].argmax().item()
                 hop_count[h].append(match_score[i])
 

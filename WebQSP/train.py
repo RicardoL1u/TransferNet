@@ -107,7 +107,7 @@ def train(args):
                     )
                 )
         if (epoch+1)%1 == 0:
-            acc = validate_AnonyQA(args, model, val_loader, device) if 'AnonyQA' in args.input_dir else validate(args, model, val_loader, device)
+            acc = validate_AnonyQA(args, model, val_loader, device) if 'AnonyQA' not in args.input_dir and 'Debug' not in args.inupt_dir else validate(args, model, val_loader, device)
             logging.info(acc)
             torch.save(model.state_dict(), os.path.join(args.save_dir, 'model-{}-{:.4f}.pt'.format(epoch, acc)))
 

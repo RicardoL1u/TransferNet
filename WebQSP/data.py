@@ -136,8 +136,12 @@ class AnonyQADataloader(torch.utils.data.DataLoader):
                 entity_range = set()
                 for p, o in sub_map[question['topic_entity']]:
                     entity_range.add(o)
+                    if len(entity_range) > 1e6:
+                        break
                     for p2, o2 in sub_map[o]:
                         entity_range.add(o2)
+                        if len(entity_range) > 1e6:
+                            break
 
                 entity_range = self.toOneHot([ent2id[o] for o in entity_range])
                 entity_range_cache[head] = entity_range

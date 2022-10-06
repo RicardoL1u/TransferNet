@@ -123,7 +123,7 @@ class AnonyQADataloader(torch.utils.data.DataLoader):
             data,self.beyond_kg = pickle.load(open('data/AnonyQA/essentail_0_5001_True.pkl','rb'))
         else:
             for question in tqdm(json.load(open(dataset_path))):
-                head = [self.ent2id[question['topic_entity']]]
+                head = self.ent2id[question['topic_entity']]
                 ans = [ent2id[a] for a in question['ans_ids'] if a in ent2id.keys()]
                 if len(ans) == 0:
                     self.beyond_kg += 1
@@ -132,7 +132,8 @@ class AnonyQADataloader(torch.utils.data.DataLoader):
                 tokenized_q = self.tokenizer(question['text'].strip(),question['question'].strip(), max_length=512, padding='max_length', return_tensors="pt",truncation='only_first')
                 
                 if head in entity_range_cache.keys():
-                    data.append([head, tokenized_q, ans, entity_range_cache[head],not_in_kg])
+                    data.append([[head], tokenized_q, ans, entity_range_cache[head],not_in_kg])
+                    continue
                 entity_range = set()
                 for p, o in sub_map[question['topic_entity']]:
                     entity_range.add(o)
@@ -145,7 +146,7 @@ class AnonyQADataloader(torch.utils.data.DataLoader):
 
                 entity_range = self.toOneHot([ent2id[o] for o in entity_range])
                 entity_range_cache[head] = entity_range
-                data.append([head, tokenized_q, ans, entity_range,not_in_kg])
+                data.append([[head], tokenized_q, ans, entity_range,not_in_kg])
 
         print('data number: {}'.format(len(data)))
         

@@ -95,7 +95,7 @@ class AnonyQADataset(torch.utils.data.Dataset):
         topic_entity, question, answer, entity_range,not_in_kg = self.data[index]
         topic_entity = self.toOneHot(topic_entity)
         answer = self.toOneHot(answer)
-        entity_range = self.toOneHot(entity_range)
+        # entity_range = self.toOneHot(entity_range)
         return topic_entity, question, answer, entity_range,len(not_in_kg)
 
     def __len__(self):
@@ -166,7 +166,7 @@ class AnonyQADataloader(torch.utils.data.DataLoader):
         one_hot = torch.FloatTensor(vec_len)
         one_hot.zero_()
         one_hot.scatter_(0, indices, 1)
-        return one_hot>0
+        return (one_hot==1)
 
 class DataLoader(torch.utils.data.DataLoader):
     def __init__(self, input_dir, fn, bert_name, ent2id, rel2id, batch_size, training=False):

@@ -1,3 +1,4 @@
+import pickle
 import os
 import torch
 import torch.nn as nn
@@ -5,21 +6,23 @@ import argparse
 from tqdm import tqdm
 from collections import defaultdict
 from utils.misc import batch_device
-from .data import load_data
+from .data import load_data,load_data_for_anonyqa
 from .model import TransferNet
 
 from IPython import embed
 
 
-def validate(args, model, data, device, verbose = False):
+def validate(args, model, data, device, name='val', verbose = False):
     model.eval()
     count = 0
     correct = 0
     hop_count = defaultdict(list)
+    e_score_list = []
     with torch.no_grad():
         for batch in tqdm(data, total=len(data)):
             outputs = model(*batch_device(batch, device)) # [bsz, Esize]
             e_score = outputs['e_score'].cpu()
+            e_score_list.append(e_score)
             scores, idx = torch.max(e_score, dim = 1) # [bsz], [bsz]
             match_score = torch.gather(batch[2], 1, idx.unsqueeze(-1)).squeeze().tolist()
             count += len(match_score)
@@ -58,7 +61,8 @@ def validate(args, model, data, device, verbose = False):
                         print(outputs['hop_attn'][i].tolist())
                         embed()
     acc = correct / count
-    print(acc)
+    with open(f'debug_e_last_{name}.pkl','wb') as f:
+        pickle.dump(e_score_list,f)
     print('pred hop accuracy: 1-hop {} (total {}), 2-hop {} (total {})'.format(
         sum(hop_count[0])/(len(hop_count[0])+0.1),
         len(hop_count[0]),
@@ -111,10 +115,14 @@ def main():
     parser.add_argument('--ckpt', required = True)
     parser.add_argument('--mode', default='val', choices=['val', 'vis', 'test'])
     parser.add_argument('--bert_name', default='bert-base-uncased', choices=['roberta-base', 'bert-base-uncased'])
+    parser.add_argument('--kg_name', default='debug_small',)
     args = parser.parse_args()
 
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    ent2id, rel2id, triples, train_loader, val_loader = load_data(args.input_dir, args.bert_name, 16)
+    if 'AnonyQA' in args.input_dir:
+        ent2id, rel2id, triples, train_loader, val_loader,test_loader = load_data_for_anonyqa(args.input_dir, args.bert_name, args.kg_name,16)
+    else:
+        ent2id, rel2id, triples, train_loader, val_loader = load_data(args.input_dir, args.bert_name, 16)
 
     model = TransferNet(args, ent2id, rel2id, triples)
     missing, unexpected = model.load_state_dict(torch.load(args.ckpt), strict=False)
@@ -131,7 +139,8 @@ def main():
     if args.mode == 'vis':
         validate(args, model, val_loader, device, True)
     elif args.mode == 'val':
-        validate(args, model, val_loader, device, False)
+        validate(args, model, val_loader, device, name='val', verbose =  False)
+        validate(args, model, test_loader, device, name='test', verbose = False)
 
 if __name__ == '__main__':
     main()

@@ -24,7 +24,7 @@ torch.set_num_threads(1) # avoid using multiple cpus
 def train(args):
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     if 'AnonyQA' in args.input_dir:
-        ent2id, rel2id, triples, train_loader, val_loader = load_data_for_anonyqa(args.input_dir, args.bert_name, args.kg_name,args.batch_size)
+        ent2id, rel2id, triples, train_loader, val_loader,_ = load_data_for_anonyqa(args.input_dir, args.bert_name, args.kg_name,args.batch_size)
     else:
         ent2id, rel2id, triples, train_loader, val_loader = load_data(args.input_dir, args.bert_name, args.batch_size)
     logging.info("Create model.........")
@@ -104,9 +104,9 @@ def train(args):
                         progress=epoch + iteration / len(train_loader),
                         meters=str(meters),
                         lr=optimizer.param_groups[0]["lr"],
-                    )
+                    ) 
                 )
-        if (epoch+1)%1 == 0:
+        if (epoch+1)%5 == 0:
             acc = validate_AnonyQA(args, model, val_loader, device) if 'AnonyQA' not in args.input_dir and 'Debug' not in args.inupt_dir else validate(args, model, val_loader, device)
             logging.info(acc)
             torch.save(model.state_dict(), os.path.join(args.save_dir, 'model-{}-{:.4f}.pt'.format(epoch, acc)))

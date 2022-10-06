@@ -118,52 +118,30 @@ class AnonyQADataloader(torch.utils.data.DataLoader):
         self.id2rel = invert_dict(rel2id)
         self.beyond_kg = 0
         data = []
+        entity_range_cache = {}
         if False:
             data,self.beyond_kg = pickle.load(open('data/AnonyQA/essentail_0_5001_True.pkl','rb'))
         else:
             for question in tqdm(json.load(open(dataset_path))):
                 head = [self.ent2id[question['topic_entity']]]
-
+                ans = [ent2id[a] for a in question['ans_ids'] if a in ent2id.keys()]
+                if len(ans) == 0:
+                    self.beyond_kg += 1
+                    continue
+                not_in_kg = [a for a in question['ans_ids'] if a not in ent2id.keys()]
+                tokenized_q = self.tokenizer(question['text'].strip(),question['question'].strip(), max_length=512, padding='max_length', return_tensors="pt",truncation='only_first')
+                
+                if head in entity_range_cache.keys():
+                    data.append([head, tokenized_q, ans, entity_range_cache[head],not_in_kg])
                 entity_range = set()
                 for p, o in sub_map[question['topic_entity']]:
                     entity_range.add(o)
                     for p2, o2 in sub_map[o]:
                         entity_range.add(o2)
-                entity_range = [ent2id[o] for o in entity_range]
-                assert entity_range != [],print(question['topic_entity'],sub_map[question['topic_entity']])
 
-                tokenized_q = self.tokenizer(question['text'].strip(),question['question'].strip(), max_length=512, padding='max_length', return_tensors="pt",truncation='only_first')
-                # if len(tokenized_q['input_ids']) > 512:
-                #     print(question['text'].strip(),question['question'].strip())
-                #     for k,v in tokenized_q.items():
-                #         print(k,v.shape)
-                # tokenized_q = self.tokenizer(question['text'].strip() + ' <spt> ' + question['question'].strip(), max_length=512, padding='max_length', return_tensors="pt")
-                ans = [ent2id[a] for a in question['ans_ids'] if a in ent2id.keys()]
-                not_in_kg = [a for a in question['ans_ids'] if a not in ent2id.keys()]
-                if len(ans) == 0:
-                    self.beyond_kg += 1
-                    continue
+                entity_range = self.toOneHot([ent2id[o] for o in entity_range])
+                entity_range_cache[head] = entity_range
                 data.append([head, tokenized_q, ans, entity_range,not_in_kg])
-        # ori_dataset = json.load(open(dataset_path))[:10000]
-        # step = len(ori_dataset) // MAX_SPLIT + 1
-        # p = Pool(MAX_SPLIT)
-        # result = [[]] * MAX_SPLIT
-        # print('Parent process %s.' % os.getpid())
-
-        # data = []
-        # for i in range(MAX_SPLIT):
-        #     start = i * step
-        #     end = min(start + step, len(ori_dataset))
-        #     result[i] = p.apply_async(preprocess_submap_anonyqa,args=(ori_dataset[start:end],start,end,sub_map,ent2id,tokenizer,training))
-        # print('Waiting for all subprocesses done...')
-        # p.close()
-        # p.join()
-        # print('All subprocesses done.')
-        # for i,unit in enumerate(result):
-        #     temp_data,beyond_kg = unit.get()
-        #     data.extend(temp_data)
-        #     self.beyond_kg += beyond_kg
-        
 
         print('data number: {}'.format(len(data)))
         
@@ -176,6 +154,14 @@ class AnonyQADataloader(torch.utils.data.DataLoader):
             collate_fn=collate, 
             )
         # super().__init__()
+
+    def toOneHot(self, indices):
+        indices = torch.LongTensor(indices)
+        vec_len = len(self.ent2id)
+        one_hot = torch.FloatTensor(vec_len)
+        one_hot.zero_()
+        one_hot.scatter_(0, indices, 1)
+        return one_hot>0
 
 class DataLoader(torch.utils.data.DataLoader):
     def __init__(self, input_dir, fn, bert_name, ent2id, rel2id, batch_size, training=False):
@@ -252,8 +238,8 @@ def load_data_for_anonyqa(datapath,bert_name,kg_name,batch_size):
     if os.path.exists(cache_fn):
         print('Read from cache file: {} (NOTE: delete it if you modified data loading process)'.format(cache_fn))
         with open(cache_fn, 'rb') as fp:
-            ent2id, rel2id, triples, train_dataloader, valid_dataloader = pickle.load(fp)
-        print('Train number: {}, test number: {}'.format(len(train_dataloader.dataset), len(valid_dataloader.dataset)))
+            ent2id, rel2id, triples, train_dataloader, valid_dataloader,test_dataloader = pickle.load(fp)
+        print('Train number: {}, val number: {}, test number: {}'.format(len(train_dataloader.dataset), len(valid_dataloader.dataset), len(test_dataloader.dataset)))
     else:
         files = ['train.json','eval.json','test.json']
         topic_entity_set = set()
@@ -305,11 +291,12 @@ def load_data_for_anonyqa(datapath,bert_name,kg_name,batch_size):
 
         train_dataloader = AnonyQADataloader(os.path.join(datapath,'train.json'),tokenizer,ent2id,rel2id,sub_map,batch_size,True)
         valid_dataloader = AnonyQADataloader(os.path.join(datapath,'eval.json'),tokenizer,ent2id,rel2id,sub_map,batch_size,False)
-
+        test_dataloader = AnonyQADataloader(os.path.join(datapath,'test.json'),tokenizer,ent2id,rel2id,sub_map,batch_size,False)
+  
         with open(cache_fn, 'wb') as fp:
-            pickle.dump((ent2id, rel2id, triples, train_dataloader, valid_dataloader), fp)
+            pickle.dump((ent2id, rel2id, triples, train_dataloader, valid_dataloader,test_dataloader), fp)
 
-    return ent2id, rel2id, triples, train_dataloader, valid_dataloader
+    return ent2id, rel2id, triples, train_dataloader, valid_dataloader,test_dataloader
 
 
 def load_data(input_dir, bert_name, batch_size):

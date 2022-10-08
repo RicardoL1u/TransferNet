@@ -109,7 +109,7 @@ class TransferNet(nn.Module):
                 'hop_attn': hop_attn.squeeze(2)
             }
         else:
-            weight = answers * 99 + 1
+            weight = answers * 9999 + 1
             loss = torch.sum(entity_range * weight * torch.pow(last_e - answers, 2)) / torch.sum(entity_range * weight)
             # print(entity_range.sum())
             # print(entity_range.shape)

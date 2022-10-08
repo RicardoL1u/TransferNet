@@ -74,14 +74,11 @@ def validate(args, model, data, device, name='val', verbose = False):
 def validate_AnonyQA(args, model, data, device,verbose = False):
     model.eval()
     total_acc = 0
+    print('Now validate in the AnonyQA')
     data = data.dataset 
     with torch.no_grad():
         for batch in data:
             batch = batch_device(batch, device)
-            # print(batch[0].shape)
-            # # print(batch[0].shape)
-            # print(batch[2].shape)
-            # print(batch[3].shape)
             outputs = model(
                 heads=batch[0].unsqueeze(0),
                 questions=batch[1],
@@ -91,13 +88,9 @@ def validate_AnonyQA(args, model, data, device,verbose = False):
             not_in_kg_num = batch[4]
             ans = batch[2]
             
-            preds = (outputs['e_score'].squeeze() > 4e-1)
-            # print(ans.shape)
-            # print(preds.shape)
-            # print(not_in_kg_num)
+            preds = (outputs['e_score'].squeeze() > 8e-1)
             matchs = torch.logical_and(preds,ans)
-            # scores, idx = torch.max(e_score, dim = 1) # [bsz], [bsz]
-            # match_score = torch.gather(batch[2], 1, idx.unsqueeze(-1)).squeeze().tolist()
+
             ans_num = ans.sum().cpu().detach().item()
             correct_num = matchs.sum().cpu().detach().item()
             pred_num = preds.sum().cpu().detach().item()

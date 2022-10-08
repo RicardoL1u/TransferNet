@@ -13,6 +13,8 @@ from .data import load_data,load_data_for_anonyqa
 from .model import TransferNet
 from .predict import validate,validate_AnonyQA
 from transformers import AdamW
+from torch.utils.data import DataLoader
+from WebQSP.data import collate
 import logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)-8s %(message)s')
 logFormatter = logging.Formatter('%(asctime)s %(levelname)-8s %(message)s')
@@ -25,6 +27,18 @@ def train(args):
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     if 'AnonyQA' in args.input_dir:
         ent2id, rel2id, triples, train_loader, val_loader,_ = load_data_for_anonyqa(args.input_dir, args.bert_name, args.kg_name,args.batch_size)
+        train_loader = DataLoader(
+            dataset = train_loader.dataset, 
+            batch_size=args.batch_size,
+            shuffle=True,
+            collate_fn=collate, 
+        )
+        val_loader = DataLoader(
+            dataset = val_loader.dataset, 
+            batch_size=args.batch_size,
+            shuffle=False,
+            collate_fn=collate, 
+        )
     else:
         ent2id, rel2id, triples, train_loader, val_loader = load_data(args.input_dir, args.bert_name, args.batch_size)
     logging.info("Create model.........")
@@ -90,9 +104,7 @@ def train(args):
             optimizer.step()
             scheduler.step()
 
-            if iteration % (len(train_loader) // 5) == 0:
-            # if True:
-                
+            if iteration % (len(train_loader) // 5) == 0:                
                 logging.info(
                     meters.delimiter.join(
                         [
@@ -106,8 +118,8 @@ def train(args):
                         lr=optimizer.param_groups[0]["lr"],
                     ) 
                 )
-        if (epoch+1)%5 == 0:
-            acc = validate_AnonyQA(args, model, val_loader, device) if 'AnonyQA' not in args.input_dir and 'Debug' not in args.inupt_dir else validate(args, model, val_loader, device)
+        if (epoch+1)%args.val_epoch == 0:
+            acc = validate_AnonyQA(args, model, val_loader, device) if 'AnonyQA' in args.input_dir and 'Debug' not in args.input_dir else validate(args, model, val_loader, device)
             logging.info(acc)
             torch.save(model.state_dict(), os.path.join(args.save_dir, 'model-{}-{:.4f}.pt'.format(epoch, acc)))
 
@@ -125,6 +137,7 @@ def main():
     parser.add_argument('--weight_decay', default=1e-5, type=float)
     parser.add_argument('--num_epoch', default=30, type=int)
     parser.add_argument('--batch_size', default=16, type=int)
+    parser.add_argument('--val_epoch', default=5, type=int)
     parser.add_argument('--seed', type=int, default=666, help='random seed')
     parser.add_argument('--opt', default='radam', type = str)
     parser.add_argument('--warmup_proportion', default=0.1, type = float)

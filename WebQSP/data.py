@@ -9,6 +9,8 @@ from utils.misc import invert_dict
 import json
 from copy import deepcopy
 from tqdm import tqdm
+import random
+random.seed(42)
 
 MAX_SPLIT = 2
 def preprocess_submap_anonyqa(ori_dataset_split:list,start:int,end:int,sub_map:dict,ent2id:dict,tokenizer:AutoTokenizer,train=False):
@@ -123,7 +125,15 @@ class AnonyQADataloader(torch.utils.data.DataLoader):
             data,self.beyond_kg = pickle.load(open('data/AnonyQA/essentail_0_5001_True.pkl','rb'))
         else:
             for question in tqdm(json.load(open(dataset_path))):
-                head = self.ent2id[question['topic_entity']]
+                head = None
+                head_entity = None
+                for topic_entity in question['topic_entity']:
+                    if topic_entity in self.ent2id.keys():
+                        head_entity = topic_entity
+                        head = self.ent2id[topic_entity]
+                if head == None:
+                    head_entity = random.choice(self.ent2id.keys())
+                    head = self.ent2id[head_entity]
                 ans = [ent2id[a] for a in question['ans_ids'] if a in ent2id.keys()]
                 if len(ans) == 0:
                     self.beyond_kg += 1
@@ -135,7 +145,7 @@ class AnonyQADataloader(torch.utils.data.DataLoader):
                     data.append([[head], tokenized_q, ans, entity_range_cache[head],not_in_kg])
                     continue
                 entity_range = set()
-                for p, o in sub_map[question['topic_entity']]:
+                for p, o in sub_map[head_entity]:
                     entity_range.add(o)
                     if len(entity_range) > 1e6:
                         break
@@ -243,21 +253,25 @@ def load_data_for_anonyqa(datapath,bert_name,kg_name,batch_size):
     if os.path.exists(cache_fn):
         print('Read from cache file: {} (NOTE: delete it if you modified data loading process)'.format(cache_fn))
         with open(cache_fn, 'rb') as fp:
-            ent2id, rel2id, triples, train_dataloader, valid_dataloader,test_dataloader = pickle.load(fp)
-        print('Train number: {}, val number: {}, test number: {}'.format(len(train_dataloader.dataset), len(valid_dataloader.dataset), len(test_dataloader.dataset)))
+            ent2id, rel2id, triples, train_dataloader, valid_dataloader,iid_test_dataloader,ood_test_dataloader = pickle.load(fp)
+        print('Train number: {}, val number: {}, test number: {}'.format(len(train_dataloader.dataset), len(valid_dataloader.dataset), len(iid_test_dataloader.dataset)))
     else:
-        files = ['train.json','eval.json','test.json']
+        files = ['train.json','valid.json','iid_test.json','ood_test.json']
         topic_entity_set = set()
         for file in files:
             for q in json.load(open(f'{datapath}/{file}')):
-                topic_entity_set.add(q['topic_entity'])
+                if type(q['topic_entity']) == list:
+                    topic_entity = q['topic_entity'][0]
+                else:
+                    topic_entity = q['topic_entity']
+                topic_entity_set.add(topic_entity)
                 
         sub_map = defaultdict(list)
         so_map = defaultdict(list)
         triples = []
         entity_set = set()
         relation_set = set()        
-        for line in set(open(f'data/kg/{kg_name}.ttl').readlines()).union(set(open('data/kg/essentail.ttl').readlines())):
+        for line in set(open(f'data/kg/{kg_name}.ttl').readlines()).union(set(open('data/kg/acl_ess.ttl').readlines())):
             l = line.strip().split('\t')
             s = l[0].strip()
             p = l[1].strip()
@@ -275,7 +289,7 @@ def load_data_for_anonyqa(datapath,bert_name,kg_name,batch_size):
             rel2id[relation+'^{-1}'] = len(rel2id)
         print(f'entity number is {len(ent2id)}')
         print(f'relation number is {len(rel2id)}')
-        for line in set(open(f'data/kg/{kg_name}.ttl').readlines()).union(set(open('data/kg/essentail.ttl').readlines())):
+        for line in set(open(f'data/kg/{kg_name}.ttl').readlines()).union(set(open('data/kg/acl_ess.ttl').readlines())):
             l = line.strip().split('\t')
             s = l[0].strip()
             p = l[1].strip()
@@ -295,13 +309,14 @@ def load_data_for_anonyqa(datapath,bert_name,kg_name,batch_size):
         # tokenizer.add_tokens(special_tokens,special_tokens=True)
 
         train_dataloader = AnonyQADataloader(os.path.join(datapath,'train.json'),tokenizer,ent2id,rel2id,sub_map,batch_size,True)
-        valid_dataloader = AnonyQADataloader(os.path.join(datapath,'eval.json'),tokenizer,ent2id,rel2id,sub_map,batch_size,False)
-        test_dataloader = AnonyQADataloader(os.path.join(datapath,'test.json'),tokenizer,ent2id,rel2id,sub_map,batch_size,False)
+        valid_dataloader = AnonyQADataloader(os.path.join(datapath,'valid.json'),tokenizer,ent2id,rel2id,sub_map,batch_size,False)
+        iid_test_dataloader = AnonyQADataloader(os.path.join(datapath,'iid_test.json'),tokenizer,ent2id,rel2id,sub_map,batch_size,False)
+        ood_test_dataloader = AnonyQADataloader(os.path.join(datapath,'ood_test.json'),tokenizer,ent2id,rel2id,sub_map,batch_size,False)
   
         with open(cache_fn, 'wb') as fp:
-            pickle.dump((ent2id, rel2id, triples, train_dataloader, valid_dataloader,test_dataloader), fp)
+            pickle.dump((ent2id, rel2id, triples, train_dataloader, valid_dataloader,iid_test_dataloader,ood_test_dataloader), fp)
 
-    return ent2id, rel2id, triples, train_dataloader, valid_dataloader,test_dataloader
+    return ent2id, rel2id, triples, train_dataloader, valid_dataloader,iid_test_dataloader,ood_test_dataloader
 
 
 def load_data(input_dir, bert_name, batch_size):

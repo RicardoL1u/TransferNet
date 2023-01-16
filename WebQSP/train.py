@@ -25,8 +25,9 @@ torch.set_num_threads(1) # avoid using multiple cpus
 
 def train(args):
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    if 'AnonyQA' in args.input_dir:
-        ent2id, rel2id, triples, train_loader, val_loader,_ = load_data_for_anonyqa(args.input_dir, args.bert_name, args.kg_name,args.batch_size)
+    # if 'AnonyQA' in args.input_dir or 'acl' in args.input_dir:
+    if True:
+        ent2id, rel2id, triples, train_loader, val_loader,_,_ = load_data_for_anonyqa(args.input_dir, args.bert_name, args.kg_name,args.batch_size)
         train_loader = DataLoader(
             dataset = train_loader.dataset, 
             batch_size=args.batch_size,
@@ -39,8 +40,8 @@ def train(args):
             shuffle=False,
             collate_fn=collate, 
         )
-    else:
-        ent2id, rel2id, triples, train_loader, val_loader = load_data(args.input_dir, args.bert_name, args.batch_size)
+    # else:
+    #     ent2id, rel2id, triples, train_loader, val_loader = load_data(args.input_dir, args.bert_name, args.batch_size)
     logging.info("Create model.........")
     model = TransferNet(args, ent2id, rel2id, triples)
     if not args.ckpt == None:
@@ -119,7 +120,10 @@ def train(args):
                     ) 
                 )
         if (epoch+1)%args.val_epoch == 0:
-            acc = validate_AnonyQA(args, model, val_loader, device) if 'AnonyQA' in args.input_dir and 'Debug' not in args.input_dir else validate(args, model, val_loader, device)
+            acc = None
+            if True:
+                acc = validate_AnonyQA(args, model, val_loader, device)
+            # acc = validate_AnonyQA(args, model, val_loader, device) if ('AnonyQA' in args.input_dir or 'acl' in args.input_dir) and 'Debug' not in args.input_dir else validate(args, model, val_loader, device)
             logging.info(acc)
             torch.save(model.state_dict(), os.path.join(args.save_dir, 'model-{}-{:.4f}.pt'.format(epoch, acc)))
 

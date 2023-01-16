@@ -7,7 +7,7 @@ args = parser.parse_args()
 datapath = args.datapath
 kg_name = args.kg_name
 
-files = ['train.json','eval.json','test.json']
+files = ['train.json','eval.json','iid_test.json','ood_test.json']
 topic_entity_set = set()
 for file in files:
     for q in json.load(open(f'{datapath}{file}')):

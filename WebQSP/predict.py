@@ -76,8 +76,10 @@ def validate_AnonyQA(args, model, data, device,verbose = False):
     total_acc = 0
     print('Now validate in the AnonyQA')
     data = data.dataset 
+    in_kg = 0
+    total_ans = 0
     with torch.no_grad():
-        for batch in data:
+        for batch in tqdm(data):
             batch = batch_device(batch, device)
             outputs = model(
                 heads=batch[0].unsqueeze(0),
@@ -98,7 +100,15 @@ def validate_AnonyQA(args, model, data, device,verbose = False):
             p1 = total_ans_num / pred_num if pred_num > total_ans_num else  pred_num / total_ans_num
             acc = correct_num / pred_num if pred_num != 0 else 0
             total_acc += (acc*p1)
+
+            if verbose:
+                in_kg += torch.logical_and(batch[3],ans).sum().cpu().detach().item()
+                total_ans += ans_num
+
     total_acc /= len(data)
+    if verbose:
+        print(f'total coverrate is {in_kg/total_ans}')
+        print(f'with penalty acc is {total_acc}')
     return total_acc
 
 def main():
@@ -112,10 +122,10 @@ def main():
     args = parser.parse_args()
 
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    if 'AnonyQA' in args.input_dir:
-        ent2id, rel2id, triples, train_loader, val_loader,test_loader = load_data_for_anonyqa(args.input_dir, args.bert_name, args.kg_name,16)
+    if 'AnonyQA' in args.input_dir or 'acl' in args.input_dir:
+        ent2id, rel2id, triples, _, val_loader,iid_test_loader,ood_test_loader = load_data_for_anonyqa(args.input_dir, args.bert_name, args.kg_name,16)
     else:
-        ent2id, rel2id, triples, train_loader, val_loader = load_data(args.input_dir, args.bert_name, 16)
+        ent2id, rel2id, triples, _, val_loader = load_data(args.input_dir, args.bert_name, 16)
 
     model = TransferNet(args, ent2id, rel2id, triples)
     missing, unexpected = model.load_state_dict(torch.load(args.ckpt), strict=False)
@@ -132,8 +142,9 @@ def main():
     if args.mode == 'vis':
         validate(args, model, val_loader, device, True)
     elif args.mode == 'val':
-        validate(args, model, val_loader, device, name='val', verbose =  False)
-        validate(args, model, test_loader, device, name='test', verbose = False)
+        validate_AnonyQA(args, model, val_loader, device, verbose = True)
+        validate_AnonyQA(args, model, iid_test_loader, device, verbose = True)
+        validate_AnonyQA(args, model, ood_test_loader, device, verbose = True)
 
 if __name__ == '__main__':
     main()

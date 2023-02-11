@@ -256,7 +256,7 @@ def load_data_for_anonyqa(datapath,bert_name,kg_name,batch_size):
             ent2id, rel2id, triples, train_dataloader, valid_dataloader,iid_test_dataloader,ood_test_dataloader = pickle.load(fp)
         print('Train number: {}, val number: {}, test number: {}'.format(len(train_dataloader.dataset), len(valid_dataloader.dataset), len(iid_test_dataloader.dataset)))
     else:
-        files = ['train.json','valid.json','iid_test.json','ood_test.json']
+        files = ['train.json','valid.json','small_iid_test.json','small_ood_test.json']
         topic_entity_set = set()
         for file in files:
             for q in json.load(open(f'{datapath}/{file}')):
@@ -310,8 +310,8 @@ def load_data_for_anonyqa(datapath,bert_name,kg_name,batch_size):
 
         train_dataloader = AnonyQADataloader(os.path.join(datapath,'train.json'),tokenizer,ent2id,rel2id,sub_map,batch_size,True)
         valid_dataloader = AnonyQADataloader(os.path.join(datapath,'valid.json'),tokenizer,ent2id,rel2id,sub_map,batch_size,False)
-        iid_test_dataloader = AnonyQADataloader(os.path.join(datapath,'iid_test.json'),tokenizer,ent2id,rel2id,sub_map,batch_size,False)
-        ood_test_dataloader = AnonyQADataloader(os.path.join(datapath,'ood_test.json'),tokenizer,ent2id,rel2id,sub_map,batch_size,False)
+        iid_test_dataloader = AnonyQADataloader(os.path.join(datapath,'small_iid_test.json'),tokenizer,ent2id,rel2id,sub_map,batch_size,False)
+        ood_test_dataloader = AnonyQADataloader(os.path.join(datapath,'small_ood_test.json'),tokenizer,ent2id,rel2id,sub_map,batch_size,False)
   
         with open(cache_fn, 'wb') as fp:
             pickle.dump((ent2id, rel2id, triples, train_dataloader, valid_dataloader,iid_test_dataloader,ood_test_dataloader), fp)

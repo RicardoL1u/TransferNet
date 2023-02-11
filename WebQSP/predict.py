@@ -5,12 +5,17 @@ import torch.nn as nn
 import argparse
 from tqdm import tqdm
 from collections import defaultdict
-from utils.misc import batch_device
+from utils.misc import batch_device,invert_dict
 from .data import load_data,load_data_for_anonyqa
 from .model import TransferNet
-
+import json
+from pathlib import Path
 from IPython import embed
 
+print('loading wikidata qid2entity_name')
+with open('/data/lyt/wikidata-5m/wikidata-5m-entity-en-label.json') as f:
+    qid2entity_name_map = json.load(f)
+print('loaded qid 2 entity name')
 
 def validate(args, model, data, device, name='val', verbose = False):
     model.eval()
@@ -71,15 +76,18 @@ def validate(args, model, data, device, name='val', verbose = False):
         ))
     return acc
 
-def validate_AnonyQA(args, model, data, device,verbose = False):
+def validate_AnonyQA(args, model, data, device,id2ent = None, datapath=None,output_path=None,verbose = False):
     model.eval()
     total_acc = 0
     print('Now validate in the AnonyQA')
     data = data.dataset 
     in_kg = 0
     total_ans = 0
+    if verbose and datapath is not None:
+        with open(datapath) as f:
+            ori_data_list = json.load(f)
     with torch.no_grad():
-        for batch in tqdm(data):
+        for idx,batch in tqdm(zip(range(len(data)),data),total=len(data)):
             batch = batch_device(batch, device)
             outputs = model(
                 heads=batch[0].unsqueeze(0),
@@ -104,11 +112,17 @@ def validate_AnonyQA(args, model, data, device,verbose = False):
             if verbose:
                 in_kg += torch.logical_and(batch[3],ans).sum().cpu().detach().item()
                 total_ans += ans_num
+                preds_ids = preds.nonzero().squeeze().cpu().detach().numpy()
+                ori_data_list[idx]['pred_qids'] = [id2ent[idx] for idx in preds_ids] if preds_ids.size != 1 else [id2ent[preds_ids.item()]]
+                ori_data_list[idx]['pred_names'] = [qid2entity_name_map[qid] for qid in ori_data_list[idx]['pred_qids']]
 
     total_acc /= len(data)
     if verbose:
         print(f'total coverrate is {in_kg/total_ans}')
         print(f'with penalty acc is {total_acc}')
+        datapath = Path(datapath)
+        with open(os.path.join(output_path,f'preds_{datapath.parent.name}_{datapath.name}'),'w') as f:
+            json.dump(ori_data_list,f,indent=4,ensure_ascii=False)
     return total_acc
 
 def main():
@@ -119,14 +133,20 @@ def main():
     parser.add_argument('--mode', default='val', choices=['val', 'vis', 'test'])
     parser.add_argument('--bert_name', default='bert-base-uncased', choices=['roberta-base', 'bert-base-uncased'])
     parser.add_argument('--kg_name', default='debug_small',)
+    parser.add_argument('--output_dir',type=str)
     args = parser.parse_args()
+    input_dir = args.input_dir
+    output_dir = args.output_dir
+
 
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    if 'AnonyQA' in args.input_dir or 'acl' in args.input_dir:
+    # if 'AnonyQA' in args.input_dir or 'acl' in args.input_dir:
+    if True:
         ent2id, rel2id, triples, _, val_loader,iid_test_loader,ood_test_loader = load_data_for_anonyqa(args.input_dir, args.bert_name, args.kg_name,16)
     else:
         ent2id, rel2id, triples, _, val_loader = load_data(args.input_dir, args.bert_name, 16)
 
+    id2ent = invert_dict(ent2id)
     model = TransferNet(args, ent2id, rel2id, triples)
     missing, unexpected = model.load_state_dict(torch.load(args.ckpt), strict=False)
     if missing:
@@ -142,9 +162,9 @@ def main():
     if args.mode == 'vis':
         validate(args, model, val_loader, device, True)
     elif args.mode == 'val':
-        validate_AnonyQA(args, model, val_loader, device, verbose = True)
-        validate_AnonyQA(args, model, iid_test_loader, device, verbose = True)
-        validate_AnonyQA(args, model, ood_test_loader, device, verbose = True)
+        # validate_AnonyQA(args, model, val_loader, device, id2ent, os.path.join(input_dir,'valid.json'), output_dir, verbose = True)
+        validate_AnonyQA(args, model, ood_test_loader, device, id2ent, os.path.join(input_dir,'small_ood_test.json'), output_dir, verbose = True)
+        validate_AnonyQA(args, model, iid_test_loader, device, id2ent, os.path.join(input_dir,'small_iid_test.json'), output_dir, verbose = True)
 
 if __name__ == '__main__':
     main()
